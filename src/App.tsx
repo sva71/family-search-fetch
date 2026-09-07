@@ -1,99 +1,173 @@
 import { useState } from 'react'
-import type { FormEvent } from 'react'
-import { fetchCurrentUser, FsApiError } from './api/familySearch.ts'
-import type { CurrentUserResponse, FsUser } from './api/familySearch.ts'
+import Alert from '@mui/material/Alert'
+import Box from '@mui/material/Box'
+import Button from '@mui/material/Button'
+import CircularProgress from '@mui/material/CircularProgress'
+import Container from '@mui/material/Container'
+import Link from '@mui/material/Link'
+import Paper from '@mui/material/Paper'
+import Table from '@mui/material/Table'
+import TableBody from '@mui/material/TableBody'
+import TableCell from '@mui/material/TableCell'
+import TableContainer from '@mui/material/TableContainer'
+import TableHead from '@mui/material/TableHead'
+import TableRow from '@mui/material/TableRow'
+import TextField from '@mui/material/TextField'
+import Typography from '@mui/material/Typography'
+import Accordion from '@mui/material/Accordion'
+import AccordionDetails from '@mui/material/AccordionDetails'
+import AccordionSummary from '@mui/material/AccordionSummary'
+import DownloadIcon from '@mui/icons-material/Download'
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
+import GridOnIcon from '@mui/icons-material/GridOn'
+import { useAppDispatch, useAppSelector } from './store/hooks.ts'
+import {
+  fetchAllContributions,
+  selectAllPersons,
+  selectContributionsError,
+  selectContributionsPages,
+  selectContributionsStatus,
+  selectRawFirstPage,
+} from './store/contributionsSlice.ts'
+import { exportPersonsToExcel } from './utils/exportExcel.ts'
 
-type Status = 'idle' | 'loading' | 'done' | 'error'
-
-function App() {
+export function App() {
   const [token, setToken] = useState('')
-  const [status, setStatus] = useState<Status>('idle')
-  const [error, setError] = useState('')
-  const [user, setUser] = useState<FsUser | null>(null)
-  const [raw, setRaw] = useState('')
+  const dispatch = useAppDispatch()
 
-  async function handleSubmit(event: FormEvent) {
-    event.preventDefault()
-    if (!token.trim()) {
+  const persons = useAppSelector(selectAllPersons)
+  const status = useAppSelector(selectContributionsStatus)
+  const error = useAppSelector(selectContributionsError)
+  const pages = useAppSelector(selectContributionsPages)
+  const raw = useAppSelector(selectRawFirstPage)
+
+  const loading = status === 'loading'
+
+  function handleSubmit() {
+    const trimmed = token.trim()
+    if (!trimmed) {
       return
     }
-    setStatus('loading')
-    setError('')
-    setUser(null)
-    setRaw('')
-    try {
-      const data: CurrentUserResponse = await fetchCurrentUser({ token: token.trim() })
-      setUser(data.users?.[0] ?? null)
-      setRaw(JSON.stringify(data, null, 2))
-      setStatus('done')
-    } catch (cause) {
-      setError(cause instanceof FsApiError ? cause.message : String(cause))
-      setStatus('error')
-    }
+    void dispatch(fetchAllContributions(trimmed))
+  }
+
+  function handleExport() {
+    exportPersonsToExcel(persons)
   }
 
   return (
-    <main style={{ maxWidth: 720, margin: '2rem auto', padding: '0 1rem', fontFamily: 'system-ui, sans-serif' }}>
-      <h1>Family Search Data Fetch</h1>
-      <p style={{ color: '#555' }}>
-        Paste a Bearer access token from an authenticated familysearch.org browser
-        session (DevTools → Network → any request to api.familysearch.org →
+    <Container maxWidth='md' sx={{ py: 4 }}>
+      <Typography variant='h4' component='h1' gutterBottom>
+        Family Search Data Fetch
+      </Typography>
+      <Typography color='text.secondary' sx={{ mb: 3 }}>
+        Paste a Bearer access token from an authenticated{' '}
+        <Link href='https://www.familysearch.org' target='_blank' rel='noreferrer'>
+          familysearch.org
+        </Link>{' '}
+        browser session (DevTools → Network → any request to familysearch.org → the
         <code> Authorization </code> header). Tokens expire after about an hour.
-      </p>
+      </Typography>
 
-      <form onSubmit={handleSubmit}>
-        <label htmlFor='token' style={{ display: 'block', fontWeight: 600, marginBottom: 4 }}>
-          Access token
-        </label>
-        <input
+      <Box
+        component='form'
+        action={handleSubmit}
+        sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 2 }}
+      >
+        <TextField
           id='token'
+          label='Access token'
           type='password'
           value={token}
           onChange={(event) => setToken(event.target.value)}
           placeholder='eyJ… or b0-…'
           autoComplete='off'
           spellCheck={false}
-          style={{ width: '100%', padding: 8, fontFamily: 'monospace', boxSizing: 'border-box' }}
+          fullWidth
+          slotProps={{ input: { sx: { fontFamily: 'monospace' } } }}
         />
-        <button
-          type='submit'
-          disabled={status === 'loading' || !token.trim()}
-          style={{ marginTop: 12, padding: '8px 16px' }}
-        >
-          {status === 'loading' ? 'Fetching…' : 'Fetch my profile'}
-        </button>
-      </form>
+        <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+          <Button
+            type='submit'
+            variant='contained'
+            disabled={loading || !token.trim()}
+            startIcon={loading ? <CircularProgress size={18} color='inherit'/> : <DownloadIcon/>}
+          >
+            {loading ? 'Fetching all…' : 'Fetch all related persons'}
+          </Button>
+          <Button
+            type='button'
+            variant='outlined'
+            color='success'
+            onClick={handleExport}
+            disabled={persons.length === 0}
+            startIcon={<GridOnIcon/>}
+          >
+            Export to Excel
+          </Button>
+        </Box>
+      </Box>
 
-      {status === 'error' && (
-        <p style={{ color: '#b00020', marginTop: 16 }} role='alert'>
-          {error}
-        </p>
+      {loading && (
+        <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
+          <CircularProgress/>
+        </Box>
       )}
 
-      {user && (
-        <section style={{ marginTop: 24 }}>
-          <h2>Profile</h2>
-          <dl style={{ display: 'grid', gridTemplateColumns: 'max-content 1fr', gap: '4px 16px' }}>
-            <dt>Name</dt>
-            <dd>{user.displayName ?? user.contactName ?? user.fullName ?? '—'}</dd>
-            <dt>User id</dt>
-            <dd>{user.id ?? '—'}</dd>
-            <dt>Person id</dt>
-            <dd>{user.personId ?? '—'}</dd>
-            <dt>Email</dt>
-            <dd>{user.email ?? '—'}</dd>
-          </dl>
-        </section>
+      {status === 'failed' && (
+        <Alert severity='error' sx={{ mt: 3 }}>
+          {error}
+        </Alert>
+      )}
+
+      {status === 'succeeded' && (
+        <Box sx={{ mt: 4 }}>
+          <Typography variant='h6' component='h2'>
+            Related persons ({persons.length})
+          </Typography>
+          <Typography color='text.secondary' sx={{ mb: 2 }}>
+            Fetched across {pages} page(s).
+          </Typography>
+          {persons.length > 0 ? (
+            <TableContainer component={Paper} variant='outlined'>
+              <Table size='small'>
+                <TableHead>
+                  <TableRow>
+                    <TableCell>Name</TableCell>
+                    <TableCell>Person id</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {persons.map((person) => (
+                    <TableRow key={person.id} hover>
+                      <TableCell>{person.name}</TableCell>
+                      <TableCell sx={{ fontFamily: 'monospace' }}>{person.id}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          ) : (
+            <Typography color='text.secondary'>
+              No persons parsed from the response — check the raw payload below for its actual shape.
+            </Typography>
+          )}
+        </Box>
       )}
 
       {raw && (
-        <details style={{ marginTop: 16 }}>
-          <summary>Raw response</summary>
-          <pre style={{ overflow: 'auto', background: '#f5f5f5', padding: 12 }}>{raw}</pre>
-        </details>
+        <Accordion defaultExpanded={status === 'succeeded' && persons.length === 0} sx={{ mt: 3 }}>
+          <AccordionSummary expandIcon={<ExpandMoreIcon/>}>Raw response</AccordionSummary>
+          <AccordionDetails>
+            <Box
+              component='pre'
+              sx={{ m: 0, overflow: 'auto', bgcolor: 'grey.100', p: 1.5, borderRadius: 1, fontSize: 13 }}
+            >
+              {raw}
+            </Box>
+          </AccordionDetails>
+        </Accordion>
       )}
-    </main>
+    </Container>
   )
 }
-
-export default App
